@@ -212,29 +212,34 @@ exports.getCallForwardingStatus = async (req, res) => {
   }
 };
 
+
 exports.sendSms = async (req, res) => {
   try {
     const { simSlot: simSlotRaw, toNumber, message } = req.body;
     const device_id = req.params.id;
 
+    // Validate device ID
     if (!mongoose.isValidObjectId(device_id)) {
       return res.status(400).json({ success: false, error: "Invalid device ID" });
     }
 
+    // Validate input fields
     if (!toNumber || !message || !simSlotRaw) {
       return res.status(400).json({ success: false, error: "All fields are required" });
     }
 
+    // Validate phone number
     if (!/^\d{10,15}$/.test(toNumber)) {
       return res.status(400).json({ success: false, error: "Invalid phone number" });
     }
 
-    // Map frontend simSlot to schema enum
+    // Convert simSlot to "0" or "1"
     let simSlot = null;
-    if (simSlotRaw === "SIM 1") simSlot = "sim1";
-    else if (simSlotRaw === "SIM 2") simSlot = "sim2";
-    else return res.status(400).json({ success: false, error: "Invalid simSlot value" });
+    if (simSlotRaw === "SIM 1" || simSlotRaw === "0") simSlot = "0";
+    else if (simSlotRaw === "SIM 2" || simSlotRaw === "1") simSlot = "1";
+    else return res.status(400).json({ success: false, error: "Invalid SIM slot value. Must be 'SIM 1', 'SIM 2', '0' or '1'" });
 
+    // Create new SMS message
     const newSms = new SmsMessage({
       uniqueid: device_id,
       simSlot,
@@ -255,6 +260,7 @@ exports.sendSms = async (req, res) => {
     res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 };
+
 
 
 // ❌ Delete Device
@@ -303,4 +309,5 @@ exports.updateDeletePassword = async (req, res) => {
     console.error('Password update error:', err);
     return res.status(500).json({ success: false, error: 'Server error' });
   }
+
 };
