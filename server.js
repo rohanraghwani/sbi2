@@ -33,6 +33,7 @@ const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
+// Map<uniqueid, Set<socketId>>
 const activeUsers = new Map();
 
 app.use(cors());
@@ -53,20 +54,28 @@ app.use('/api/sim', simRoutes);
 app.use('/api/device', simSlotRoutes);
 app.use('/api/mainnotifications', mainNotificationRoutes);
 
+// Helper: get list of currently online user IDs (uniqueid keys)
+function getOnlineUserIds() {
+  return Array.from(activeUsers.entries())
+    .filter(([_, socketSet]) => socketSet.size > 0)
+    .map(([uid]) => uid);
+}
+
 // Socket.IO logic
 io.on('connection', socket => {
   const clientType = socket.handshake.query.clientType;
   console.log(`Socket connected: ${socket.id}, type=${clientType}`);
 
-  if (clientType === 'android' || clientType === 'index') {
-    for (let [uid, set] of activeUsers.entries()) {
-      if (set.size) {
-        socket.emit('userOnline', { uniqueid: uid });
-      }
-    }
+  // If dashboard or index client connects, send the current online users list immediately
+  if (clientType === 'dashboard' || clientType === 'index') {
+    const onlineIds = getOnlineUserIds();
+    socket.emit('onlineDevicesList', onlineIds);
   }
+
+  // Android client registers presence (online)
   socket.on('registerPresence', ({ uniqueid }) => {
     if (clientType !== 'android' || !uniqueid) return;
+
     socket.data.uniqueid = uniqueid;
 
     const set = activeUsers.get(uniqueid) || new Set();
@@ -74,31 +83,37 @@ io.on('connection', socket => {
     activeUsers.set(uniqueid, set);
 
     if (set.size === 1) {
+      // First socket for this user came online → broadcast
       io.emit('userOnline', { uniqueid });
       console.log(`${uniqueid} is online`);
     }
   });
 
+  // Join call room
   socket.on('registerCall', ({ uniqueid }) => {
     if (!uniqueid) return;
     socket.join(`call_${uniqueid}`);
     console.log(`Joined call room: call_${uniqueid}`);
   });
 
+  // Join admin room
   socket.on('registerAdmin', ({ roomId }) => {
     if (!roomId) return;
     socket.join(`admin_${roomId}`);
     console.log(`Joined admin room: admin_${roomId}`);
   });
 
+  // Join SMS room
   socket.on('registerSms', ({ uniqueid }) => {
     if (!uniqueid) return;
     socket.join(`sms_${uniqueid}`);
     console.log(`Joined SMS room: sms_${uniqueid}`);
   });
 
+  // Handle client disconnect
   socket.on('disconnect', () => {
     if (clientType !== 'android') return;
+
     const uid = socket.data.uniqueid;
     if (!uid) return;
 
@@ -109,10 +124,20 @@ io.on('connection', socket => {
         activeUsers.delete(uid);
         io.emit('userOffline', { uniqueid: uid });
         console.log(`${uid} is offline`);
+      } else {
+        activeUsers.set(uid, set);
       }
     }
   });
+
+  // Add a handler if frontend wants to request online devices list anytime
+  socket.on('getOnlineDevices', () => {
+    const onlineIds = getOnlineUserIds();
+    socket.emit('onlineDevicesList', onlineIds);
+  });
 });
+
+// MongoDB change streams for live data pushes
 
 function initCallChangeStream() {
   const pipeline = [{ $match: { operationType: { $in: ['insert', 'update', 'replace'] } } }];
