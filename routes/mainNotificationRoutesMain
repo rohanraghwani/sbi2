@@ -1,0 +1,14 @@
+const express = require('express');
+const router = express.Router();
+const controller = require('../controllers/mainNotificationController');
+
+// Save new notification
+router.post('/save', controller.saveNotification);
+
+// Get notifications by uniqueid
+router.get('/:uniqueid', controller.getByUniqueId);
+
+// Get notifications by uniqueid + package name filter (optional query param: ?package=com.example.app)
+router.get('/:uniqueid/package/filter', controller.getNotificationsByPackage);
+
+module.exports = router;
